@@ -1,165 +1,117 @@
-from urllib import *
-import requests
-from io import BytesIO
-from bs4 import BeautifulSoup
-from datetime import date, datetime, timedelta
-from dateutil.relativedelta import *
-import urlparse
-
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-
-import time, re, collections, shutil, os, sys, zipfile, xlrd, threading, csv, openpyxl, math
-
-def takeFourth(elem):
-    return elem[4]
-
-class log_printer():
-    def __init__(self):
-        curDate = datetime.now()
-        curDateStr = "{:4d}_{:02d}_{:02d}_{:02d}_{:02d}_{:02d}".format(curDate.year, curDate.month, curDate.day,
-                                                                       curDate.hour, curDate.minute, curDate.second)
-        self.logFile = open("Log_File_" + curDateStr + ".txt", "w+")
-
-    def print_log(self, logTxt):
-        try:
-            self.logFile.write(logTxt + '\n')
-            self.logFile.flush()
-        except:
-            pass
-        print logTxt + '\n'
-
-    def close_log(self):
-        self.logFile.close()
-
-def download(url, num_retries=3):
-    """Download function that also retries 5XX errors"""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
+import scrapy
 
 
-        # headers = {'User-agent': 'your bot 0.1'}
-        result = requests.get(url, headers=headers, stream=True)
-        html = result.content.decode()
+class MainScraper(scrapy.Spider):
+    name = "MainScraper"
+    start_urls = [
+        "https://www.disclosurequest.com/results?sortColumn=&sortDirection=&searchBox=&amountToBeRaisedMin=&amountToBeRaisedMax=&filingDateMin=&filingDateMax=&cikNumber=&page=1"]
 
-    except urllib.error.URLError as e:
-        print('Download error:', e.reason)
-        html = None
-        if num_retries > 0:
-            if hasattr(e, 'code') and 500 <= e.code < 600:
-                # retry 5XX HTTP errors
-                html = download(url, num_retries - 1)
-    except:
-        html = None
-    return html
+    def parse(self, response):
+        urls = response.xpath("//tr[@class='detail']/td/div[4]/span[2]/a/@href").extract()
+        company_names = response.xpath("//tr[@class='summary']/td[1]/text()").extract()
 
-class mainScraper():
-    def __init__(self):
-        self.base_url = "https://www.disclosurequest.com/"
+        for url, company_name in zip(urls, company_names):
+            url = response.urljoin(url)
+            yield scrapy.Request(url=url, callback=self.getURL1, meta={"Company Name": company_name})
 
-        self.start_url = "https://www.disclosurequest.com/results?sortColumn=&sortDirection=&searchBox=&amountToBeRaisedMin=&amountToBeRaisedMax=&filingDateMin=&filingDateMax=&cikNumber=&page={}"
-        self.total_urls = []
-        self.total_links_cnt = 0
-        self.total_data = []
-        self.log_printer = log_printer()
-        self.save_flag = True
+        # follow pagination link
+        next_page_url = response.css("a.next-page.middle::attr(href)").extract_first()
+        # if next_page_url:
+        #     next_page_url = response.urljoin(next_page_url)
+        #     yield scrapy.Request(url=next_page_url, callback=self.parse)
 
-        self.links_file_name = "Result/all_links.xlsx"
-        self.dest = "Result"
-        if not os.path.exists(self.dest):
-            os.makedirs(self.dest)
+    def getURL1(self, response):
+        company_name = response.meta["Company Name"]
+        # url = response.css('iframe#formFrame::attr(src)').extract_first()
+        url = response.urljoin(response.xpath("//div[@class='sec-form-page']/label/select/option[2]/@value").extract_first())
+        print "Hahaha", url
+        yield scrapy.Request(url=url, callback=self.getURL2, meta={"Company Name": company_name})
 
-    def getTotalURLs(self):
-        self.wb = openpyxl.Workbook()
-        self.ws = self.wb.active
+    def getURL2(self, response):
+        company_name = response.meta["Company Name"]
+        url = response.css('iframe#formFrame::attr(src)').extract_first()
+        yield scrapy.Request(url=url, callback=self.parse_iframe, meta={"Company Name": company_name})
 
-        url = self.start_url.format(1)
-        html = download(url)
-        soup = BeautifulSoup(html, "html.parser")
+    def parse_iframe(self, response):
+        company_name = response.meta["Company Name"]
 
-        page_disp = soup.select_one("div.pagination > p").text.split(" ")[3]
-        self.total_page_num = int(page_disp)
-        self.pages = []
-        for i in range(self.total_page_num):
-            self.pages.append(i+1)
-        self.pages.reverse()
-
-        self.threads = []
-        self.max_threads = 100
-
-        while self.threads or self.pages:
-            for thread in self.threads:
-                if not thread.is_alive():
-                    self.threads.remove(thread)
-
-            while len(self.threads) < self.max_threads and self.pages:
-                thread = threading.Thread(target=self.getOneURL)
-                thread.setDaemon(True)
-                thread.start()
-                self.threads.append(thread)
-
-        # self.saveXLSX()
-
-    def getOneURL(self):
-        page = self.pages.pop()
-
-        url = self.start_url.format(page)
-        html = download(url)
-        soup = BeautifulSoup(html, "html.parser")
-        details = soup.select("tr.detail")
-        summaries = soup.select("tr.summary")
+        xmlTxt = response.text.split("<TEXT>")[1]
+        print "Hahaha", xmlTxt
 
 
-        for j, (detail, summary) in enumerate(zip(details, summaries)):
-
-            company = summary.select("td")[0].text
-            link = detail.select("div > span > a")[1].get("href")
-            link = urlparse.urljoin(self.base_url, link)
-            self.total_links_cnt += 1
-
-            # if self.total_links_cnt % 20000 == 0 and self.total_links_cnt > 0:
-            #     self.saveXLSX()
-
-            # if len(self.total_data) > 50000 and self.save_flag:
-            #     self.saveXLSX()
-
-            self.total_data.append([company, link, self.total_links_cnt, j+1, page, self.total_page_num])
-
-            logTxt = "Company:\t{}\nLink:\t\t{}\nIndex:\t\t{}\nnRow:\t\t{}\nPage:\t\t{} of {}\n".format(company, link, self.total_links_cnt, j+1, page, self.total_page_num)
+        # cik = response.xpath("//table[@summary='Issuer Identity Information']/tbody/tr[2]/td[1]/a/text()").extract_first()
+        # name_of_issuer = response.xpath("//table[@summary='Issuer Identity Information']/tbody/tr[4]/td[1]/text()").extract_first()
+        # jurisdiction = response.xpath("//table[@summary='Issuer Identity Information']/tbody/tr[6]/td[1]/text()").extract_first()
+        # entity_type = response.xpath("//table[@summary='Table with Multiple boxes']/tr/td[1]/span[text()='X']/../../td[2]/text()").extract_first()
 
 
-            self.log_printer.print_log(logTxt)
 
-    def saveXLSX(self):
-        self.save_flag = False
-        # while self.total_data:
-        # self.total_data.sort(takeFourth)
-        # for i in range(50000):
-        #     [company, link, index, page, total_page_num] = self.total_data.pop()
-        for i, line in enumerate(self.total_data):
-            [company, link, index, nrow, page, total_page_num] = line
-            self.ws.cell(row=index, column=1).value = company
-            self.ws.cell(row=index, column=2).value = link
-            self.ws.cell(row=index, column=3).value = nrow
-            self.ws.cell(row=index, column=4).value = page
-            self.ws.cell(row=index, column=5).value = total_page_num
+        yield {
+            "Entity Type": response.xpath(
+                "//table[@summary='Table with Multiple boxes']/tr/td[1]/span[text()='X']/../../td[2]/text()").extract_first(),
 
-        self.wb.save(self.links_file_name)
+            "Company Name": company_name,
 
-        logTxt = "\tSaved data successfully!!!"
-        self.log_printer.print_log(logTxt)
-        self.save_flag = True
+            "CIK (Filer ID Number)": response.xpath(
+                "//table[@summary='Issuer Identity Information']/tbody/tr[2]/td[1]/a/text()").extract_first(),
+
+            "Name of Issuer": response.xpath(
+                "//table[@summary='Issuer Identity Information']/tbody/tr[4]/td[1]/text()").extract_first(),
+
+            "Jurisdiction of Incorporation/Organization": response.xpath(
+                "//table[@summary='Issuer Identity Information']/tbody/tr[6]/td[1]/text()").extract_first(),
+
+            "Name of Issuer": response.xpath(
+                "//table[@summary='Principal Place of Business and Contact Information']/tbody/tr[2]/td[1]/text()").extract_first(),
+
+            "Street Address 1": response.xpath(
+                "//table[@summary='Principal Place of Business and Contact Information']/tbody/tr[4]/td[1]/text()").extract_first(),
+
+            "Street Address 2": response.xpath(
+                "//table[@summary='Principal Place of Business and Contact Information']/tbody/tr[4]/td[2]/text()").extract_first(),
+
+            "City": response.xpath(
+                "//table[@summary='Principal Place of Business and Contact Information']/tbody/tr[6]/td[1]/text()").extract_first(),
+
+            "State/Province/Country": response.xpath(
+                "//table[@summary='Principal Place of Business and Contact Information']/tbody/tr[6]/td[2]/text()").extract_first(),
+
+            "ZIP/PostalCode": response.xpath(
+                "//table[@summary='Principal Place of Business and Contact Information']/tbody/tr[6]/td[3]/text()").extract_first(),
+
+            "Phone Number of Issuer": response.xpath(
+                "//table[@summary='Principal Place of Business and Contact Information']/tbody/tr[6]/td[4]/text()").extract_first(),
+
+            "Last Name": response.xpath("//table[@summary='Related Persons']/tbody/tr[2]/td[1]/text()").extract(),
+
+            "First Name": response.xpath("//table[@summary='Related Persons']/tbody/tr[2]/td[2]/text()").extract(),
+
+            "Street Address 1": response.xpath(
+                "//table[@summary='Related Persons']/tbody/tr[4]/td[1]/text()").extract(),
+
+            "Street Address 2": response.xpath(
+                "//table[@summary='Related Persons']/tbody/tr[4]/td[2]/text()").extract(),
+
+            "City": response.xpath("//table[@summary='Related Persons']/tbody/tr[6]/td[1]/text()").extract(),
+
+            "State/Province/Country": response.xpath(
+                "//table[@summary='Related Persons']/tbody/tr[6]/td[2]/text()").extract(),
+
+            "ZIP/PostalCode": response.xpath("//table[@summary='Related Persons']/tbody/tr[6]/td[3]/text()").extract(),
+
+            "Revenue Range": response.xpath(
+                "//table[@summary='Issuer Size']/tr/td[1]/span[text()='X']/../../td[2]/text()").extract_first(),
+
+            "Aggregate Net Asset Value Range": response.xpath(
+                "//table[@summary='Issuer Size']/tr/td[3]/span[text()='X']/../../td[4]/text()").extract_first(),
+        }
 
 if __name__ == '__main__':
-    start_t = time.time()
-    app = mainScraper()
-    app.getTotalURLs()
-    app.saveXLSX()
+    app = MainScraper()
 
-    print(time.time() - start_t)
+"""
+scrapy runspider main.py
+scrapy runspider main.py -o items.json
+more items.json
+
+"""
