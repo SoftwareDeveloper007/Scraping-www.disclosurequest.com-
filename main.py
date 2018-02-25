@@ -1,6 +1,5 @@
 import scrapy
 
-
 class MainScraper(scrapy.Spider):
     name = "MainScraper"
     start_urls = [
@@ -24,7 +23,6 @@ class MainScraper(scrapy.Spider):
         company_name = response.meta["Company Name"]
         # url = response.css('iframe#formFrame::attr(src)').extract_first()
         url = response.urljoin(response.xpath("//div[@class='sec-form-page']/label/select/option[2]/@value").extract_first())
-        print "Hahaha", url
         yield scrapy.Request(url=url, callback=self.getURL2, meta={"Company Name": company_name})
 
     def getURL2(self, response):
@@ -35,8 +33,7 @@ class MainScraper(scrapy.Spider):
     def parse_iframe(self, response):
         company_name = response.meta["Company Name"]
 
-        xmlTxt = response.text.split("<TEXT>")[1]
-        print "Hahaha", xmlTxt
+        xmlTxt = response.text.split("<TEXT>")[1].split("</TEXT>")[0]
 
 
         # cik = response.xpath("//table[@summary='Issuer Identity Information']/tbody/tr[2]/td[1]/a/text()").extract_first()
