@@ -13,9 +13,9 @@ class MainScraper(scrapy.Spider):
     def __init__(self, name=None, **kwargs):
         super(MainScraper, self).__init__()
 
-        total_csv_name = "total.csv"
-        self.total_file = open(total_csv_name, 'w')
-        self.writer = csv.writer(self.total_file)
+        # total_csv_name = "total.csv"
+        # self.total_file = open(total_csv_name, 'w', encoding='utf-8', newline='')
+        # self.writer = csv.writer(self.total_file)
 
         self.keys = [
             'sV', 'sT', 'tOL', 'pI_c', 'pI_eN', 'pI_iA_s1', 'pI_iA_s2', 'pI_iA_c', 'pI_iA_sOC', 'pI_iA_sOCD',
@@ -43,7 +43,7 @@ class MainScraper(scrapy.Spider):
             'oD_uOP_gPU_dA', 'oD_sB_aR', 'oD_sB_s_iN', 'oD_sB_s_sN', 'oD_sB_s_nOS', 'oD_sB_s_sT', 'oD_sB_s_sD'
         ]
 
-        self.writer.writerow(self.keys)
+        # self.writer.writerow(self.keys)
 
     def parse(self, response):
         urls = response.xpath("//tr[@class='detail']/td/div[4]/span[2]/a/@href").extract()
@@ -86,9 +86,11 @@ class MainScraper(scrapy.Spider):
                 row.append(result[key])
             else:
                 row.append("")
-        self.writer.writerow(row)
+
+        # self.writer.writerow(row)
 
         yield result
+        # yield row
 
 class xmlParser():
     def __init__(self, elem, elem_path=""):

@@ -1,7 +1,7 @@
 # import xml.etree.ElementTree as ET
 # import xml.etree as ET
 import xml.etree.cElementTree as ET
-import openpyxl
+import openpyxl, csv
 
 xml = """<XML>
 <?xml version="1.0"?>
@@ -559,3 +559,6 @@ if __name__ == '__main__':
     #     ws.cell(row=i+2, column=3).value = value
     #
     # wb.save("Header.xlsx")
+    total_csv_name = "total1.csv"
+    total_file = open(total_csv_name, 'w', encoding='utf-8', newline='')
+    writer = csv.writer(total_file)
