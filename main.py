@@ -1,14 +1,12 @@
 import scrapy
 import xml.etree.cElementTree as ET
-import csv
+import csv, pymysql
 
 
 class MainScraper(scrapy.Spider):
     name = "MainScraper"
     start_urls = [
         "https://www.disclosurequest.com/results?sortColumn=&sortDirection=&searchBox=&amountToBeRaisedMin=&amountToBeRaisedMax=&filingDateMin=&filingDateMax=&cikNumber=&page=1"]
-
-
 
     def __init__(self, name=None, **kwargs):
         super(MainScraper, self).__init__()
@@ -44,6 +42,39 @@ class MainScraper(scrapy.Spider):
         ]
 
         # self.writer.writerow(self.keys)
+
+        logTxt = "Saving data into mySQL..."
+        print(logTxt)
+
+        # DB_HOST = '159.65.234.92'
+        DB_HOST = 'localhost'
+        DB_USER = 'root'
+        DB_PASSWORD = 'bluedream'
+        # DB_PASSWORD = 'passion1989'
+        DB_NAME = 'gallery'
+        self.TABLE_NAME = "Total_first"
+
+        self.db = pymysql.connect(host=DB_HOST, user=DB_USER, passwd=DB_PASSWORD, db=DB_NAME)
+        logTxt = "Connected to the database successfully"
+        print(logTxt)
+
+        # prepare a cursor object using cursor() method
+        self.cur = self.db.cursor()
+
+        sql = "DROP TABLE IF EXISTS {}".format(self.TABLE_NAME)
+        self.cur.execute(sql)
+
+        sql = "CREATE TABLE IF NOT EXISTS {}(ID INT(11) PRIMARY KEY AUTO_INCREMENT NOT NULL, ".format(self.TABLE_NAME)
+
+        sub_sql = "%s TEXT, " * len(self.keys)
+        sub_sql = sub_sql[:-2]
+        sql = sql + sub_sql + ")"
+        sql = sql % tuple(self.keys)
+
+        self.cur.execute(sql)
+        self.db.commit()
+
+        self.total_cnt = 0
 
     def parse(self, response):
         urls = response.xpath("//tr[@class='detail']/td/div[4]/span[2]/a/@href").extract()
@@ -89,7 +120,43 @@ class MainScraper(scrapy.Spider):
 
         # self.writer.writerow(row)
 
-        yield result
+
+        select_sql = "SELECT * FROM {} WHERE ".format(self.TABLE_NAME)
+
+        row = []
+        selected_keys = []
+        for key in self.keys:
+            if key in result:
+                select_sql += '{} = "{}" AND '.format(key, result[key])
+                row.append(result[key])
+                selected_keys.append(key)
+
+        select_sql = select_sql[:-4]
+
+        self.cur.execute(select_sql)
+
+        if not self.cur.fetchall() and row:
+            self.cur = self.db.cursor()
+            sql = "INSERT INTO Total_third(Order_, Family, Species, Occurence, Fishbase_name, Name_, Danger) " + \
+                  "VALUES (%s, %s, %s, %s, %s, %s, %s);"
+
+            sql = "INSERT INTO {}(".format(self.TABLE_NAME)
+            key_clause = "%s, " * len(selected_keys)
+            key_clause = key_clause[:-2]
+            key_clause += ")"
+            key_clause = key_clause % tuple(selected_keys)
+            sql = sql + key_clause + " VALUES("
+            value_clause = '"%s", ' * len(selected_keys)
+            value_clause = value_clause[:-2]
+            value_clause += ");"
+            sql = sql + value_clause
+
+            self.cur.execute(sql, row)
+            self.db.commit()
+
+            self.total_cnt += 1
+            print(self.total_cnt)
+        # yield result
         # yield row
 
 class xmlParser():

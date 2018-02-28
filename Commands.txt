@@ -1,0 +1,4 @@
+--- Disable Scrapy log ----------------------------
+
+scrapy runspider main.py -s LOG_ENABLED=False
+scrapy crawl main.py -s LOG_ENABLED=False
